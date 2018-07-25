@@ -1,11 +1,15 @@
-<html>
-    <head>
-        <title>Current date app</title>
-    </head>
+{% extends 'bootstrap/base.html' %}
 
-    <body>
-        <h1>Current date app</h1>
-        <p>The date is: {{ now.date() }}</p>
-        <p>The time is: {{ now.time() }}</p>
-    </body>
-</html>
+{% block title %}
+    Current date app
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    {{ moment.include_moment() }}
+{% endblock %}
+
+{% block content %}
+    <h1>Current date app</h1>
+    <p>The date and time is: {{ moment(now).format('LLLL') }}</p>
+{% endblock %}

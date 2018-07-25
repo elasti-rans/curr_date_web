@@ -2,9 +2,13 @@
 import datetime
 
 import flask
+import flask_moment
+import flask_bootstrap
 
 
 app = flask.Flask(__name__)  # pylint: disable=invalid-name
+bootstrap = flask_bootstrap.Bootstrap(app)  # pylint: disable=invalid-name
+moment = flask_moment.Moment(app)  # pylint: disable=invalid-name
 
 
 @app.route('/')
