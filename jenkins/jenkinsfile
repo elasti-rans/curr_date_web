@@ -1,0 +1,94 @@
+parameters {
+        string(defaultValue: 'master', description: 'THe branch name or commit', name: 'BRANCH')
+        booleanParam(defaultValue: true, description: '', name: 'FULL_BUILD')
+    }
+
+
+final CI_SERVER = '10.211.55.26'
+
+final GIT_URL = 'https://github.com/elasti-rans/curr_date_web.git'
+final BRANCH = 'master'
+
+node {
+    // Get Artifactory server instance, defined in the Artifactory Plugin administration page.
+    def server = Artifactory.server "art1"
+    // Create an Artifactory Gradle instance.
+    def rtGradle = Artifactory.newGradleBuild()
+    def rtDocker = Artifactory.docker server: server
+    rtDocker.addProperty("project-name", "docker1").addProperty("status", "ci")
+    def buildInfo
+
+    stage('Clone sources') {
+        git branch: BRANCH, url: GIT_URL
+    }
+
+    stage('Artifactory configuration') {
+        // Tool name from Jenkins configuration
+        rtGradle.tool = 'gradle'
+        // Set Artifactory repositories for dependencies resolution and artifacts deployment.
+        rtGradle.deployer repo:'ext-release-local', server: server
+        rtGradle.resolver repo:'remote-repos', server: server
+    }
+
+    stage('Gradle build') {
+        buildInfo = rtGradle.run rootDir: "./", buildFile: 'build.gradle', tasks: 'clean artifactoryPublish'
+    }
+
+    stage('Publish build info') {
+        server.publishBuildInfo buildInfo
+    }
+
+    if(params.FULL_BUILD) {
+        stage('Unit Tests') {
+            sh "python3.6 -m venv venv"
+            sh "source venv/bin/activate"
+            sh "./run_tests.sh"
+        }
+    }
+
+    def image_name = "curr_date_web:${env.BUILD_ID}"
+    def registry = 'http://localhost:5000'
+    stage('Package the app in docker') {
+        docker.withRegistry(registry) {
+            def customImage = docker.build(image_name)
+            customImage.push()
+        }
+
+        // instead of above should use artifactory docker to publish
+        // but i don't have the pro version.
+        //def docker_buildInfo = rtDocker.push image_name, 'test-docker'
+        //server.publishBuildInfo docker_buildInfo
+    }
+
+    stage('Deploy on ci') {
+        // install galaxy roles
+        sh "ansible-galaxy install -vvv -r ansible/requirements.yml -p ansible/roles/"
+
+        ansiblePlaybook colorized: true,
+            credentialsId: 'ssh-jenkins',
+            limit: "${CI_SERVER}",
+            installation: 'ansible',
+            inventory: 'ansible/inventory.ini',
+            playbook: 'ansible/playbook.yml',
+            become: true,
+            becomeUser: 'root'
+
+        docker.withServer("tcp://${CI_SERVER}:2375") {
+            docker.withRegistry(registry) {
+                docker.image(image_name).withRun('-p 8000:5000') { c ->
+                    run_tests
+                }
+            }
+        }
+    }
+
+    stage('Promote artifact status to stable') {
+
+    }
+}
+
+
+def run_tests() {
+    stage('Run integration tests') {
+    }
+}
